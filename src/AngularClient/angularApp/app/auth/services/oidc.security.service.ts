@@ -94,8 +94,7 @@ export class OidcSecurityService {
                 );
 
 				// This is required to make the init check if the existing token is valid, but
-				// causes 2 login callbacks with a first login.
-                //this.refreshSession();
+                this.refreshSession();
 
                 return race$;
             }),
