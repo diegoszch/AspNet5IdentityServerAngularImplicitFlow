@@ -127,7 +127,9 @@ export class OidcSecurityCommon {
         }
 
         for (const key in keysToDelete.values()) {
-            delete currentValue[key];
+            if (key) {
+                delete currentValue[key];
+            }
         }
 
         this.store(storageKey, JSON.stringify(currentValue));

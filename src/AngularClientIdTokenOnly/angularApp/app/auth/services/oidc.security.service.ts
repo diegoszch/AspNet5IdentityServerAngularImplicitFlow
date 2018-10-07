@@ -2,7 +2,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpParams } from '@angular/common/http';
 import { EventEmitter, Inject, Injectable, NgZone, Output, PLATFORM_ID } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable, throwError as observableThrowError } from 'rxjs';
+import { BehaviorSubject, Observable, throwError as observableThrowError, timer } from 'rxjs';
 import { catchError, filter, map, shareReplay, switchMap, switchMapTo, take, tap, race } from 'rxjs/operators';
 import { OidcDataService } from '../data-services/oidc-data.service';
 import { AuthWellKnownEndpoints } from '../models/auth.well-known-endpoints';
@@ -81,12 +81,20 @@ export class OidcSecurityService {
                     tap(() => this.loggerService.logDebug('IsAuthorizedRace: Existing token is still authorized.')),
                     race(this.onAuthorizationResult.asObservable().pipe(
                             take(1),
-                            tap(() => this.loggerService.logDebug('IsAuthorizedRace: Silent Renew Refresh Session Complete')),
+                            tap(() => this.loggerService.logDebug(
+                                'IsAuthorizedRace: Silent Renew Refresh Session Complete')),
+                            map(() => true)
+                        ),
+                        timer(5000).pipe( // backup, if nothing happens after 5 seconds stop waiting
+                            tap(() => this.loggerService.logWarning(
+                                'IsAuthorizedRace: Timeout reached. Emitting.')),
                             map(() => true)
                         )
-                ));
+                    )
+                );
 
-                //this.refreshSession();
+                // This is required to make the init check if the existing token is valid
+                this.refreshSession();
 
                 return race$;
             }),
@@ -234,11 +242,7 @@ export class OidcSecurityService {
     }
 
     setState(state: string): void {
-        this.oidcSecurityCommon.authStateControl = state;
-    }
-
-    getState(): string {
-        return this.oidcSecurityCommon.authStateControl;
+        this.oidcSecurityCommon.addAuthState(state);
     }
 
     setCustomRequestParameters(params: { [key: string]: string | number | boolean }) {
@@ -270,16 +274,13 @@ export class OidcSecurityService {
 
         this.loggerService.logDebug('BEGIN Authorize, no auth data');
 
-        let state = this.oidcSecurityCommon.authStateControl;
-        if (!state) {
-            state = Date.now() + '' + Math.random();
-            this.oidcSecurityCommon.authStateControl = state;
-        }
+        const state = Date.now() + '' + Math.random();
+        this.oidcSecurityCommon.addAuthState(state);
 
         const nonce = 'N' + Math.random() + '' + Date.now();
-        this.oidcSecurityCommon.authNonce = nonce;
+        this.oidcSecurityCommon.addAuthNonce(nonce);
         this.loggerService.logDebug(
-            'AuthorizedController created. local state: ' + this.oidcSecurityCommon.authStateControl
+            'AuthorizedController created. local state: ' + state
         );
 
         if (this.authWellKnownEndpoints) {
@@ -522,17 +523,13 @@ export class OidcSecurityService {
     refreshSession(): Observable<any> {
         this.loggerService.logDebug('BEGIN refresh session Authorize');
 
-        let state = this.oidcSecurityCommon.authStateControl;
-        if (state === '' || state === null) {
-            state = Date.now() + '' + Math.random();
-            this.oidcSecurityCommon.authStateControl = state;
-        }
+        const state = Date.now() + '' + Math.random();
+        this.oidcSecurityCommon.addAuthState(state);
 
         const nonce = 'N' + Math.random() + '' + Date.now();
-        this.oidcSecurityCommon.authNonce = nonce;
+        this.oidcSecurityCommon.addAuthNonce(nonce);
         this.loggerService.logDebug(
-            'RefreshSession created. adding myautostate: ' +
-                this.oidcSecurityCommon.authStateControl
+            `RefreshSession created. adding myautostate: ${state}`
         );
 
         let url = '';
